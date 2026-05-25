@@ -59,7 +59,7 @@ export function ScoreCell({
           className={`h-8 flex-1 min-w-0 border-0 shadow-none font-semibold text-sm cursor-pointer focus:ring-0 rounded-lg transition-colors ${
             score
               ? SCORE_COLORS[score]
-              : "text-zinc-300 hover:text-zinc-500 hover:bg-zinc-50"
+              : "white hover:text-gray-700 hover:bg-zinc-50"
           }`}
         >
           <SelectValue placeholder="—" />
@@ -142,7 +142,7 @@ export function ScoreCell({
           <div className="flex justify-end gap-2 mt-3">
             <button
               onClick={() => setNoteOpen(false)}
-              className="px-3 h-8 rounded-lg text-sm text-zinc-500 hover:bg-zinc-100 transition-colors cursor-pointer"
+              className="px-3 h-8 rounded-lg text-sm text-gray-700 hover:bg-zinc-100 transition-colors cursor-pointer"
             >
               Cancel
             </button>

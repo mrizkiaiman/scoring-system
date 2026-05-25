@@ -15,6 +15,7 @@ export interface ScoringData {
   avgLabel: string; // the sticky last column header name
   scores: Record<string, Record<string, number>>; // scores[rowId][colId]
   notes: Record<string, Record<string, string>>; // notes[rowId][colId]
+  weights: Record<string, number>; // weights[colId] — percentage (0–100)
 }
 
 export const DEFAULT_DATA: ScoringData = {
@@ -38,4 +39,5 @@ export const DEFAULT_DATA: ScoringData = {
   ],
   scores: {},
   notes: {},
+  weights: {},
 };

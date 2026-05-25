@@ -10,9 +10,10 @@ function loadFromStorage(): ScoringData {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_DATA;
     const parsed = JSON.parse(raw) as ScoringData;
-    // backfill rowLabel / avgLabel for existing data that predates these fields
+    // backfill rowLabel / avgLabel / weights for existing data that predates these fields
     if (!parsed.rowLabel) parsed.rowLabel = "Provider";
     if (!parsed.avgLabel) parsed.avgLabel = "Avg";
+    if (!parsed.weights) parsed.weights = {};
     return parsed;
   } catch {
     return DEFAULT_DATA;
@@ -22,6 +23,24 @@ function loadFromStorage(): ScoringData {
 function saveToStorage(data: ScoringData) {
   if (typeof window === "undefined") return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+export function distributeWeights(columns: Column[]): Record<string, number> {
+  if (columns.length === 0) return {};
+  const raw = 100 / columns.length;
+  const rounded = Math.round(raw * 100) / 100; // 2 decimal places
+  const weights: Record<string, number> = {};
+  let assigned = 0;
+  columns.forEach((col, idx) => {
+    if (idx === columns.length - 1) {
+      // Last column gets the remainder to guarantee sum = 100
+      weights[col.id] = Math.round((100 - assigned) * 100) / 100;
+    } else {
+      weights[col.id] = rounded;
+      assigned += rounded;
+    }
+  });
+  return weights;
 }
 
 export function useScoringData() {
@@ -45,10 +64,15 @@ export function useScoringData() {
 
   const addColumn = useCallback(
     (name: string) => {
-      update((prev) => ({
-        ...prev,
-        columns: [...prev.columns, { id: crypto.randomUUID(), name }],
-      }));
+      update((prev) => {
+        const newCol = { id: crypto.randomUUID(), name };
+        const newColumns = [...prev.columns, newCol];
+        return {
+          ...prev,
+          columns: newColumns,
+          weights: distributeWeights(newColumns),
+        };
+      });
     },
     [update],
   );
@@ -78,11 +102,13 @@ export function useScoringData() {
           delete rowNotes[id];
           notes[rowId] = rowNotes;
         }
+        const newColumns = prev.columns.filter((c) => c.id !== id);
         return {
           ...prev,
-          columns: prev.columns.filter((c) => c.id !== id),
+          columns: newColumns,
           scores,
           notes,
+          weights: distributeWeights(newColumns),
         };
       });
     },
@@ -175,6 +201,15 @@ export function useScoringData() {
     [update],
   );
 
+  // ── Weights ───────────────────────────────────────────────────────────────
+
+  const setWeights = useCallback(
+    (weights: Record<string, number>) => {
+      update((prev) => ({ ...prev, weights }));
+    },
+    [update],
+  );
+
   // ── Scores & Notes ────────────────────────────────────────────────────────
 
   const setScore = useCallback(
@@ -207,6 +242,13 @@ export function useScoringData() {
     [update],
   );
 
+  // ── Import / Export ───────────────────────────────────────────────────────
+
+  const replaceAll = useCallback((newData: ScoringData) => {
+    saveToStorage(newData);
+    setData(newData);
+  }, []);
+
   return {
     data,
     hydrated,
@@ -220,7 +262,9 @@ export function useScoringData() {
     moveRow,
     setRowLabel,
     setAvgLabel,
+    setWeights,
     setScore,
     setNote,
+    replaceAll,
   };
 }

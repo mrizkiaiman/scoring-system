@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router";
 import type { Route } from "./+types/dashboard";
 import { Input } from "../components/ui/input";
@@ -12,7 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../components/ui/alert-dialog";
-import { useScoringData } from "../lib/useScoringData";
+import { useScoringData, distributeWeights } from "../lib/useScoringData";
 import {
   ChevronUp,
   ChevronDown,
@@ -25,8 +25,11 @@ import {
   LayoutDashboard,
   Columns3,
   Rows3,
+  Download,
+  Upload,
+  Save,
 } from "lucide-react";
-import type { Column, Row } from "../lib/types";
+import type { Column, Row, ScoringData } from "../lib/types";
 import { toast } from "sonner";
 
 // ── List item ─────────────────────────────────────────────────────────────────
@@ -39,6 +42,8 @@ interface ListItemProps {
   onMoveDown: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
+  weight?: number;
+  onWeightChange?: (weight: number) => void;
 }
 
 function ListItem({
@@ -49,6 +54,8 @@ function ListItem({
   onMoveDown,
   onRename,
   onDelete,
+  weight,
+  onWeightChange,
 }: ListItemProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(label);
@@ -74,14 +81,14 @@ function ListItem({
         <button
           onClick={onMoveUp}
           disabled={isFirst}
-          className="flex items-center justify-center h-4 w-4 rounded text-zinc-300 hover:text-zinc-600 disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors"
+          className="flex items-center justify-center h-4 w-4 rounded white hover:text-zinc-600 disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors"
         >
           <ChevronUp className="h-3 w-3" />
         </button>
         <button
           onClick={onMoveDown}
           disabled={isLast}
-          className="flex items-center justify-center h-4 w-4 rounded text-zinc-300 hover:text-zinc-600 disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors"
+          className="flex items-center justify-center h-4 w-4 rounded white hover:text-zinc-600 disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors"
         >
           <ChevronDown className="h-3 w-3" />
         </button>
@@ -103,6 +110,28 @@ function ListItem({
         <span className="flex-1 text-sm font-medium text-zinc-800 truncate">
           {label}
         </span>
+      )}
+
+      {/* Weight input */}
+      {onWeightChange !== undefined && (
+        <div className="flex items-center gap-1 shrink-0">
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step={0.01}
+            value={weight ?? ""}
+            onChange={(e) => {
+              const val = e.target.value === "" ? 0 : Number(e.target.value);
+              onWeightChange(
+                Math.max(0, Math.min(100, Math.round(val * 100) / 100)),
+              );
+            }}
+            className="h-7 w-16 rounded-md border border-zinc-200 bg-white px-2 text-xs text-center font-medium text-zinc-700 focus:outline-none focus:ring-1 focus:ring-zinc-300"
+            placeholder="0"
+          />
+          <span className="text-xs text-zinc-400">%</span>
+        </div>
       )}
 
       {/* Action buttons */}
@@ -129,13 +158,13 @@ function ListItem({
                 setDraft(label);
                 setEditing(true);
               }}
-              className="flex items-center justify-center h-7 w-7 rounded-lg text-zinc-300 hover:text-zinc-600 hover:bg-zinc-100 opacity-0 group-hover:opacity-100 cursor-pointer transition-all"
+              className="flex items-center justify-center h-7 w-7 rounded-lg white hover:text-zinc-600 hover:bg-zinc-100 opacity-0 group-hover:opacity-100 cursor-pointer transition-all"
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
             <button
               onClick={onDelete}
-              className="flex items-center justify-center h-7 w-7 rounded-lg text-zinc-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 cursor-pointer transition-all"
+              className="flex items-center justify-center h-7 w-7 rounded-lg white hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 cursor-pointer transition-all"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
@@ -281,6 +310,38 @@ function LabelInput({
   );
 }
 
+// ── Data validation ───────────────────────────────────────────────────────────
+
+function isValidScoringData(data: unknown): data is ScoringData {
+  if (typeof data !== "object" || data === null) return false;
+  const d = data as Record<string, unknown>;
+  if (!Array.isArray(d.columns)) return false;
+  if (!Array.isArray(d.rows)) return false;
+  if (typeof d.scores !== "object" || d.scores === null) return false;
+  if (typeof d.notes !== "object" || d.notes === null) return false;
+  // Check that columns/rows have id and name
+  for (const col of d.columns) {
+    if (typeof col !== "object" || col === null) return false;
+    if (typeof (col as Record<string, unknown>).id !== "string") return false;
+    if (typeof (col as Record<string, unknown>).name !== "string") return false;
+  }
+  for (const row of d.rows) {
+    if (typeof row !== "object" || row === null) return false;
+    if (typeof (row as Record<string, unknown>).id !== "string") return false;
+    if (typeof (row as Record<string, unknown>).name !== "string") return false;
+  }
+  return true;
+}
+
+function backfillDefaults(data: ScoringData): ScoringData {
+  return {
+    ...data,
+    rowLabel: data.rowLabel || "Provider",
+    avgLabel: data.avgLabel || "Avg",
+    weights: data.weights || {},
+  };
+}
+
 // ── Dashboard page ────────────────────────────────────────────────────────────
 
 export function meta(_: Route.MetaArgs) {
@@ -301,12 +362,111 @@ export default function DashboardPage() {
     moveRow,
     setRowLabel,
     setAvgLabel,
+    setWeights,
+    replaceAll,
   } = useScoringData();
 
   const [deleteTarget, setDeleteTarget] = useState<{
     type: "column" | "row";
     item: Column | Row;
   } | null>(null);
+
+  const [importConfirmOpen, setImportConfirmOpen] = useState(false);
+  const [pendingImport, setPendingImport] = useState<ScoringData | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Weight draft state ──────────────────────────────────────────────────────
+
+  const [draftWeights, setDraftWeights] = useState<Record<string, number>>({});
+
+  // Sync draft weights when persisted data changes (hydration, import, add/delete column)
+  useEffect(() => {
+    if (hydrated) {
+      const savedWeights = data.weights;
+      // If no weights saved yet, initialize with equal distribution
+      if (Object.keys(savedWeights).length === 0 && data.columns.length > 0) {
+        const distributed = distributeWeights(data.columns);
+        setDraftWeights(distributed);
+      } else {
+        setDraftWeights(savedWeights);
+      }
+    }
+  }, [hydrated, data.columns, data.weights]);
+
+  const draftTotal =
+    Math.round(
+      data.columns.reduce((sum, col) => sum + (draftWeights[col.id] ?? 0), 0) *
+        100,
+    ) / 100;
+
+  const canSaveWeights = draftTotal === 100;
+
+  // Check if draft differs from saved
+  const weightsDirty = data.columns.some(
+    (col) => (draftWeights[col.id] ?? 0) !== (data.weights[col.id] ?? 0),
+  );
+
+  function handleSaveWeights() {
+    if (!canSaveWeights) return;
+    setWeights(draftWeights);
+    toast.success("Weights saved");
+  }
+
+  function handleDraftWeightChange(colId: string, value: number) {
+    setDraftWeights((prev) => ({ ...prev, [colId]: value }));
+  }
+
+  // ── Export ──────────────────────────────────────────────────────────────────
+
+  function handleExport() {
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const date = new Date().toISOString().slice(0, 10);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `scoring-data-${date}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Data exported");
+  }
+
+  // ── Import ──────────────────────────────────────────────────────────────────
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        if (!isValidScoringData(parsed)) {
+          toast.error(
+            "Invalid file format. Expected a scoring data JSON file.",
+          );
+          return;
+        }
+        setPendingImport(backfillDefaults(parsed));
+        setImportConfirmOpen(true);
+      } catch {
+        toast.error("Could not parse file. Make sure it's valid JSON.");
+      }
+    };
+    reader.readAsText(file);
+    // Reset input so the same file can be re-selected
+    e.target.value = "";
+  }
+
+  function confirmImport() {
+    if (pendingImport) {
+      replaceAll(pendingImport);
+      toast.success("Data imported successfully");
+    }
+    setPendingImport(null);
+    setImportConfirmOpen(false);
+  }
 
   if (!hydrated) {
     return (
@@ -340,10 +500,50 @@ export default function DashboardPage() {
         <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">
           Dashboard
         </h1>
-        <p className="text-sm text-zinc-500 mt-1.5">
+        <p className="text-sm text-gray-700 mt-1.5">
           Manage the columns (criteria) and rows (providers) for your scoring
           table.
         </p>
+      </div>
+
+      {/* Data import/export */}
+      <div className="px-10 mb-5 max-w-5xl">
+        <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
+          <div className="px-5 py-4 border-b border-zinc-100 flex items-center gap-3">
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-zinc-100 text-zinc-600">
+              <Download className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900">Data</h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Export or import your scoring data as a JSON file
+              </p>
+            </div>
+          </div>
+          <div className="px-5 py-4 flex items-center gap-3">
+            <button
+              onClick={handleExport}
+              className="inline-flex items-center gap-2 px-4 h-9 rounded-lg bg-zinc-900 text-white text-sm font-medium hover:bg-zinc-700 cursor-pointer transition-colors"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-2 px-4 h-9 rounded-lg border border-zinc-200 bg-white text-zinc-700 text-sm font-medium hover:bg-zinc-50 cursor-pointer transition-colors"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Import
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Column labels config */}
@@ -364,7 +564,7 @@ export default function DashboardPage() {
           </div>
           <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <p className="text-xs font-medium text-zinc-500 mb-1.5">
+              <p className="text-xs font-medium text-gray-700 mb-1.5">
                 First column (sticky left)
               </p>
               <div className="flex gap-2">
@@ -376,7 +576,7 @@ export default function DashboardPage() {
               </div>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-500 mb-1.5">
+              <p className="text-xs font-medium text-gray-700 mb-1.5">
                 Last column (sticky right)
               </p>
               <div className="flex gap-2">
@@ -411,8 +611,30 @@ export default function DashboardPage() {
               onMoveDown={() => moveColumn(col.id, "down")}
               onRename={(name) => renameColumn(col.id, name)}
               onDelete={() => setDeleteTarget({ type: "column", item: col })}
+              weight={draftWeights[col.id] ?? 0}
+              onWeightChange={(w) => handleDraftWeightChange(col.id, w)}
             />
           ))}
+          {columns.length > 0 && (
+            <div className="flex items-center justify-between pt-3">
+              <div
+                className={`flex items-center gap-1.5 text-xs font-medium ${draftTotal === 100 ? "text-emerald-600" : "text-amber-600"}`}
+              >
+                <span>Total: {draftTotal}%</span>
+                {draftTotal !== 100 && (
+                  <span className="text-amber-500">(must be 100%)</span>
+                )}
+              </div>
+              <button
+                onClick={handleSaveWeights}
+                disabled={!canSaveWeights || !weightsDirty}
+                className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              >
+                <Save className="h-3 w-3" />
+                Save Weights
+              </button>
+            </div>
+          )}
         </SectionCard>
 
         <SectionCard
@@ -461,6 +683,38 @@ export default function DashboardPage() {
               className="rounded-lg bg-red-500 hover:bg-red-600 text-white cursor-pointer"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Import confirmation */}
+      <AlertDialog
+        open={importConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setImportConfirmOpen(false);
+            setPendingImport(null);
+          }
+        }}
+      >
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Replace all data?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will overwrite all your current columns, rows, scores, and
+              notes with the imported data. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-lg cursor-pointer">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmImport}
+              className="rounded-lg bg-zinc-900 hover:bg-zinc-700 text-white cursor-pointer"
+            >
+              Import
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

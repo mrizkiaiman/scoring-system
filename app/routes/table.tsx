@@ -63,8 +63,7 @@ function EditableHeader({
     setEditing(false);
   }
 
-  const baseClass =
-    "text-xs font-semibold text-zinc-500 uppercase tracking-wider";
+  const baseClass = "text-xs font-semibold text-white uppercase tracking-wider";
 
   if (editing) {
     return (
@@ -103,7 +102,7 @@ function EditableHeader({
         setDraft(value);
         setEditing(true);
       }}
-      className={`group/hdr flex items-center gap-1.5 cursor-pointer hover:text-zinc-700 transition-colors ${baseClass} ${align === "center" ? "justify-center w-full" : ""}`}
+      className={`group/hdr flex items-center gap-1.5 cursor-pointer hover:text-white transition-colors ${baseClass} ${align === "center" ? "justify-center w-full" : ""}`}
     >
       <span>{value}</span>
       <Pencil className="h-2.5 w-2.5 opacity-0 group-hover/hdr:opacity-50 transition-opacity shrink-0" />
@@ -129,14 +128,37 @@ export default function TablePage() {
     );
   }
 
-  const { columns, rows, scores, notes, rowLabel, avgLabel } = data;
+  const { columns, rows, scores, notes, rowLabel, avgLabel, weights } = data;
 
   function getRowAverage(rowId: string): number | null {
     const rowScores = scores[rowId];
     if (!rowScores) return null;
-    const vals = Object.values(rowScores).filter((v) => typeof v === "number");
-    if (vals.length === 0) return null;
-    return vals.reduce((a, b) => a + b, 0) / vals.length;
+
+    // Check if any weights are configured
+    const hasWeights = columns.some((col) => (weights[col.id] ?? 0) > 0);
+
+    if (hasWeights) {
+      // Weighted average: only consider columns that have both a score and a weight
+      let weightedSum = 0;
+      let totalWeight = 0;
+      for (const col of columns) {
+        const score = rowScores[col.id];
+        const weight = weights[col.id] ?? 0;
+        if (typeof score === "number" && weight > 0) {
+          weightedSum += score * weight;
+          totalWeight += weight;
+        }
+      }
+      if (totalWeight === 0) return null;
+      return weightedSum / totalWeight;
+    } else {
+      // Simple average (fallback when no weights configured)
+      const vals = Object.values(rowScores).filter(
+        (v) => typeof v === "number",
+      );
+      if (vals.length === 0) return null;
+      return vals.reduce((a, b) => a + b, 0) / vals.length;
+    }
   }
 
   return (
@@ -161,7 +183,7 @@ export default function TablePage() {
 
           {/* Scale legend */}
           <div className="flex items-center gap-2 mt-1 border border-zinc-100 rounded-xl px-5 py-2.5 shrink-0">
-            <Info className="h-3.5 w-3.5 text-zinc-300" />
+            <Info className="h-3.5 w-3.5 text-white" />
             <span className="text-xs text-zinc-400 mr-1">Scale</span>
             {[1, 2, 3, 4, 5].map((n) => (
               <span
@@ -193,9 +215,9 @@ export default function TablePage() {
             <div className="overflow-x-auto">
               <table className="border-collapse text-sm w-full">
                 <thead>
-                  <tr className="border-b border-zinc-100 bg-zinc-50/80">
+                  <tr className="border-b border-zinc-800 bg-zinc-900">
                     {/* Sticky first header — editable */}
-                    <th className="sticky left-0 z-20 bg-zinc-50/80 border-r border-zinc-100 px-7 py-4 text-left min-w-[200px] whitespace-nowrap">
+                    <th className="sticky left-0 z-20 bg-zinc-900 border-r border-zinc-700 px-7 py-4 text-left min-w-[200px] whitespace-nowrap">
                       <EditableHeader
                         value={rowLabel}
                         onSave={setRowLabel}
@@ -206,14 +228,14 @@ export default function TablePage() {
                     {columns.map((col) => (
                       <th
                         key={col.id}
-                        className="px-7 py-4 text-center text-xs font-semibold text-zinc-500 uppercase tracking-wider min-w-[150px] whitespace-nowrap border-r border-zinc-100/60"
+                        className="px-7 py-4 text-center text-xs font-semibold text-white uppercase tracking-wider min-w-[150px] whitespace-nowrap border-r border-zinc-700/60"
                       >
                         {col.name}
                       </th>
                     ))}
 
                     {/* Sticky last header — editable */}
-                    <th className="sticky right-0 z-20 bg-zinc-50/80 border-l border-zinc-100 px-7 py-4 min-w-[120px] whitespace-nowrap">
+                    <th className="sticky right-0 z-20 bg-zinc-900 border-l border-zinc-700 px-7 py-4 min-w-[120px] whitespace-nowrap">
                       <EditableHeader
                         value={avgLabel}
                         onSave={setAvgLabel}
@@ -263,7 +285,7 @@ export default function TablePage() {
                               {avg.toFixed(1)}
                             </span>
                           ) : (
-                            <span className="text-zinc-300">—</span>
+                            <span className="text-white">—</span>
                           )}
                         </td>
                       </tr>
