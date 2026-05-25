@@ -8,6 +8,12 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Textarea } from "./ui/textarea";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "./ui/tooltip";
 import { MessageSquare, MessageSquarePlus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -100,19 +106,34 @@ export function ScoreCell({
 
       {/* Note icon — opens popover that shows note + edit form */}
       <Popover open={noteOpen} onOpenChange={setNoteOpen}>
-        <PopoverTrigger
-          className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors cursor-pointer ${
-            hasNote
-              ? "text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50"
-              : "text-zinc-200 hover:text-zinc-400 hover:bg-zinc-100"
-          }`}
-        >
-          {hasNote ? (
-            <MessageSquare className="h-3.5 w-3.5 fill-current" />
-          ) : (
-            <MessageSquarePlus className="h-3.5 w-3.5" />
-          )}
-        </PopoverTrigger>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger render={<span />} className="shrink-0">
+              <PopoverTrigger
+                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors cursor-pointer ${
+                  hasNote
+                    ? "text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50"
+                    : "text-zinc-200 hover:text-zinc-400 hover:bg-zinc-100"
+                }`}
+              >
+                {hasNote ? (
+                  <MessageSquare className="h-3.5 w-3.5 fill-current" />
+                ) : (
+                  <MessageSquarePlus className="h-3.5 w-3.5" />
+                )}
+              </PopoverTrigger>
+            </TooltipTrigger>
+            {hasNote && !noteOpen && (
+              <TooltipContent
+                side="top"
+                hideArrow
+                className="bg-white text-zinc-900 border border-zinc-900 rounded-md px-3 py-1.5 text-xs max-w-[200px]"
+              >
+                {note}
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
 
         <PopoverContent
           className="w-80 p-4 rounded-xl shadow-xl border-zinc-100"

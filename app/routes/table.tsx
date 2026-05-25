@@ -4,6 +4,12 @@ import type { Route } from "./+types/table";
 import { ScoreCell } from "../components/ScoreCell";
 import { useScoringData } from "../lib/useScoringData";
 import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "../components/ui/tooltip";
+import {
   LayoutDashboard,
   TableIcon,
   Info,
@@ -226,12 +232,23 @@ export default function TablePage() {
                     </th>
 
                     {columns.map((col) => (
-                      <th
-                        key={col.id}
-                        className="px-7 py-4 text-center text-xs font-semibold text-white uppercase tracking-wider min-w-[150px] whitespace-nowrap border-r border-zinc-700/60"
-                      >
-                        {col.name}
-                      </th>
+                      <TooltipProvider key={col.id}>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={<th />}
+                            className="px-7 py-4 text-center text-xs font-semibold text-white uppercase tracking-wider min-w-[150px] whitespace-nowrap border-r border-zinc-700/60 cursor-pointer hover:bg-zinc-800 transition-colors"
+                          >
+                            {col.name}
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="top"
+                            hideArrow
+                            className="bg-white text-zinc-900 border border-zinc-900 rounded-md px-3 py-1.5 text-xs font-medium"
+                          >
+                            Weight: {weights[col.id] ?? 0}%
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     ))}
 
                     {/* Sticky last header — editable */}
